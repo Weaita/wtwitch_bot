@@ -23,7 +23,7 @@ def cmd_oye(conn, chan, user, prompt):
         return
     contexto_canal = DATOS_CANAL.get(CHANNEL, "")
     emocion = EMOCIONES.get(PERSONALIDAD_ACTUAL.get(CHANNEL, "feliz"), EMOCIONES["feliz"])
-    preprompt = f"Personalidad: {SYSTEM_PROMPT} Estado emocional: {emocion} Debes responder a la siguiente petición/pregunta: "
+    preprompt = f"Personalidad: {SYSTEM_PROMPT} Estado emocional: {emocion} Debes responder a la siguiente petición/pregunta en menos de 30 palabras (importante): "
     respuesta = query_gemini(f"{preprompt} {prompt}")
     if respuesta:
         respuesta_corta = respuesta.strip().replace("\n", " ")[:400]
