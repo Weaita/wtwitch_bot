@@ -1,3 +1,4 @@
 twitchAPI
 irc
 requests
+websockets
