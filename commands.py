@@ -15,7 +15,7 @@ def cmd_personalidad(conn, chan, user, prompt):
         print(f"🔄 Personalidad de {CHANNEL}: {tipo}")
 
 def cmd_presentacion(conn, chan, user, prompt):
-    print('Hoolas * se presenta *')
+    print('Hoola, soy Alphonse BOT, estoy a su servicio <3')
 
 def cmd_oye(conn, chan, user, prompt):
     if not prompt.strip():
