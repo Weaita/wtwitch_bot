@@ -32,8 +32,8 @@ async def main():
     def on_message(connection, event):
         msg = event.arguments[0]
         nick = event.source.nick
-        print(f"{nick}: {msg}")
-        if msg.startswith('!'):
+        # print(f"{nick}: {msg}")
+        if msg.startswith('!') or msg.lower().startswith('@alphonse_bot7'):
             handle_command(connection, f"#{CHANNEL}", nick, msg)
 
     def send_hello(connection):

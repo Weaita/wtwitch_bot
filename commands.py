@@ -15,6 +15,32 @@ def cmd_personalidad(conn, chan, user, prompt):
         PERSONALIDAD_ACTUAL[CHANNEL] = tipo
         print(f"🔄 Personalidad de {CHANNEL}: {tipo}")
 
+CUSTOM_COMMANDS = {}
+
+def cmd_crearcomando(conn, chan, user, prompt):
+    args = prompt.strip().split(" ", 1)
+    # Si no se da nombre, error
+    if not args[0]:
+        conn.privmsg(chan, f"@{user} ❌ Ej: !wcomando saludo Hola")
+        return
+
+    cmd_name = args[0].lower()
+    if not cmd_name.startswith("!"):
+        cmd_name = f"!{cmd_name}"
+
+    # Si solo se da el nombre, se borra el comando
+    if len(args) == 1 or not args[1].strip():
+        if cmd_name in CUSTOM_COMMANDS:
+            del CUSTOM_COMMANDS[cmd_name]
+            conn.privmsg(chan, f"{user}, comando {cmd_name} eliminado.")
+        else:
+            conn.privmsg(chan, f"{user}, el comando {cmd_name} no existe.")
+        return
+
+    # Crear o sobrescribir comando
+    CUSTOM_COMMANDS[cmd_name] = args[1].strip()
+    conn.privmsg(chan, f"{user}, comando {cmd_name} creado/actualizado.")
+
 def cmd_presentacion(conn, chan, user, prompt):
     conn.privmsg(chan, 'Hoola, soy Alphonse BOT, estoy a su servicio <3')
 
@@ -56,7 +82,8 @@ COMMANDS = {
     '!wdescribe': {'func': cmd_describe, 'roles': ['oro']},
     '!wpresentate': {'func': cmd_presentacion, 'roles': ['oro']},
     '!wperso': {'func': cmd_personalidad, 'roles': ['oro']},
-    '!patas': {'func': cmd_patas, 'roles': ['bronce', 'plata', 'oro']}
+    '!patas': {'func': cmd_patas, 'roles': ['bronce', 'plata', 'oro']},
+    '!wcomando': {'func': cmd_crearcomando, 'roles': ['oro']},
 }
 
 def get_user_role(nick: str) -> str:
@@ -74,6 +101,10 @@ def handle_command(connection, channel, nick, message):
         return
     cmd = parts[0].lower()
     prompt = " ".join(parts[1:])
+
+    if cmd.startswith("@alphonse_bot7"):
+        cmd = '!woye'
+
     if cmd in COMMANDS:
         role = get_user_role(nick)
         allowed_roles = COMMANDS[cmd]['roles']
@@ -81,3 +112,5 @@ def handle_command(connection, channel, nick, message):
             COMMANDS[cmd]['func'](connection, channel, nick, prompt)
         else:
             print(f"⛔ {nick} ({role}) no tiene permiso para usar {cmd}")
+    elif cmd in CUSTOM_COMMANDS:
+        connection.privmsg(channel, CUSTOM_COMMANDS[cmd])

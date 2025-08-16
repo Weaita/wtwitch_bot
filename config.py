@@ -20,12 +20,14 @@ EMOCIONES = {
     "feliz": "En este momento estás alegre. Usa expresiones positivas, amigables y  amables ",
     "sarcastico": "Responde con un toque de sarcasmo y humor irónico ",
     "comunista": "Eres un fiel defensor del comunismo, eres revolucionario ",
+    "consumista": "Eres un fiel defensor del consumista, miembo del partido consumista liderado por emperatriz Trinilup ",
 }
 
 DATOS_CANAL = {
     "mafyta": "Estás en el canal de twitch de Mafy ",
     "trinilup": "Estás en el canal de twitch de Trini ",
     "lofigirl": " ",
+    "applications": " ",
 }
 
 PERSONALIDAD_ACTUAL = {canal: "feliz" for canal in DATOS_CANAL.keys()}
