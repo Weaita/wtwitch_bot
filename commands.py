@@ -1,5 +1,6 @@
 from config import EMOCIONES, DATOS_CANAL, SYSTEM_PROMPT, PERSONALIDAD_ACTUAL, CHANNEL, USER_ROLES
 from gemini import query_gemini
+import random
 
 def cmd_ping(conn, chan, user, prompt):
     conn.privmsg(chan, f'{user}, pong!')
@@ -15,7 +16,17 @@ def cmd_personalidad(conn, chan, user, prompt):
         print(f"🔄 Personalidad de {CHANNEL}: {tipo}")
 
 def cmd_presentacion(conn, chan, user, prompt):
-    print('Hoola, soy Alphonse BOT, estoy a su servicio <3')
+    conn.privmsg(chan, 'Hoola, soy Alphonse BOT, estoy a su servicio <3')
+
+frases_patas = [
+    "Me tapo los ojitos 🫣.",
+    "¡Ay! 😳😳😳.",
+    "Link solo para guerreros de temple duro."
+]
+
+def cmd_patas(conn, chan, user, prompt):
+    frase_random = random.choice(frases_patas)
+    conn.privmsg(chan, f'{frase_random}')
 
 def cmd_oye(conn, chan, user, prompt):
     if not prompt.strip():
@@ -32,7 +43,7 @@ def cmd_oye(conn, chan, user, prompt):
 
 def cmd_describe(conn, chan, user, prompt):
     respuesta = query_gemini(
-        prompt="Di lo linda que luce esta persona de acuerdo al outfit que lleva, por favor procura que la respuesta sea natural y tenga menos de 40 palabras.",
+        prompt="Di lo linda que luce esta persona de acuerdo al outfit que lleva, incluyendo posibles accesorios, si es que tiene. Por favor procura que la respuesta sea natural y tenga menos de 40 palabras.",
         img_url=f"https://static-cdn.jtvnw.net/previews-ttv/live_user_{CHANNEL}.jpg"
     )
     if respuesta:
@@ -44,7 +55,8 @@ COMMANDS = {
     '!woye': {'func': cmd_oye, 'roles': ['oro']},
     '!wdescribe': {'func': cmd_describe, 'roles': ['oro']},
     '!wpresentate': {'func': cmd_presentacion, 'roles': ['oro']},
-    '!wperso': {'func': cmd_personalidad, 'roles': ['oro']}
+    '!wperso': {'func': cmd_personalidad, 'roles': ['oro']},
+    '!patas': {'func': cmd_patas, 'roles': ['bronce', 'plata', 'oro']}
 }
 
 def get_user_role(nick: str) -> str:
