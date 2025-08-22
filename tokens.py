@@ -82,3 +82,35 @@ def is_channel_live(token):
     response.raise_for_status()
     data = response.json()
     return len(data['data']) > 0
+
+def validate_access_token_expires_in_seconds(access_token: str) -> int:
+    """Devuelve segundos hasta expiración del access token.
+    Si es inválido o expirado, devuelve 0.
+    """
+    url = 'https://id.twitch.tv/oauth2/validate'
+    headers = {
+        'Authorization': f'OAuth {access_token}'
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            return 0
+        data = response.json()
+        return int(data.get('expires_in', 0))
+    except Exception:
+        return 0
+
+
+def ensure_fresh_user_tokens(min_seconds_left: int = 300):
+    """Asegura tokens de usuario frescos.
+    - Valida el access token actual.
+    - Si faltan menos de min_seconds_left o es inválido, refresca y persiste.
+    Retorna: (access_token, refresh_token, was_refreshed: bool)
+    """
+    access_token, refresh_token = get_tokens()
+    seconds_left = validate_access_token_expires_in_seconds(access_token)
+    if seconds_left <= min_seconds_left:
+        new_access_token, new_refresh_token = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token)
+        update_tokens(new_access_token, new_refresh_token)
+        return new_access_token, new_refresh_token, True
+    return access_token, refresh_token, False
