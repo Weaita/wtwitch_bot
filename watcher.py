@@ -1,21 +1,31 @@
+# Se encarga de determinar cuándo iniciar el bot, ya sea si el canal ya está en vivo al iniciar el script o cuando
+# recibe la notificación de que el canal ha iniciado directo mediante EventSub WebSocket.
+
+import time
 import asyncio
 import json
 import websockets
 import requests
+from twitchAPI.twitch import Twitch
 from bot import main
-from tokens import get_tokens, get_broadcaster_id, is_channel_live  # <-- cambia aquí
-from config import CLIENT_ID, CHANNEL
+from tokens import (
+    get_tokens,
+    get_broadcaster_id,
+    is_channel_live,
+    verify_tokens,
+    saveTokensToJSONBIN,
+    refresh_access_token,
+    authenticate_and_store
+)
+from config import CLIENT_ID, CHANNEL, CLIENT_SECRET
 
-async def eventsub_listener():
-    access_token, _ = await asyncio.to_thread(get_tokens)  # <-- y aquí
+bot_task = None  # referencia global a la tarea del bot
+access_token = None
+refresh_token = None
+TOKEN_REFRESH_MARGIN = 300  # renovar 5 min antes de expirar
 
-    # Si ya está en vivo, arrancar bot inmediatamente
-    if await asyncio.to_thread(is_channel_live, access_token):
-        print("⚡ El canal ya está en directo. Iniciando bot de inmediato...")
-        asyncio.create_task(main())
-
-    broadcaster_id = await asyncio.to_thread(get_broadcaster_id, access_token)
-
+# Manejo de conexión WS
+async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token):
     async with websockets.connect("wss://eventsub.wss.twitch.tv/ws") as ws:
         async for message in ws:
             data = json.loads(message)
@@ -23,25 +33,127 @@ async def eventsub_listener():
 
             if msg_type == "session_welcome":
                 session_id = data["payload"]["session"]["id"]
-                sub_payload = {
-                    "type": "stream.online",
-                    "version": "1",
-                    "condition": {"broadcaster_user_id": broadcaster_id},
-                    "transport": {"method": "websocket", "session_id": session_id}
-                }
-                headers = {
-                    "Client-ID": CLIENT_ID,
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json"
-                }
-                resp = requests.post(
-                    "https://api.twitch.tv/helix/eventsub/subscriptions",
-                    headers=headers, json=sub_payload
-                )
-                print("✅ Suscripción EventSub creada:", resp.json())
+                subscribe_eventsub(session_id, broadcaster_id, access_token)
 
             elif msg_type == "notification":
                 event_type = data["payload"]["subscription"]["type"]
+
                 if event_type == "stream.online":
-                    print("🔴 El canal inició directo. Arrancando bot...")
-                    asyncio.create_task(main())
+                    print("🔴->🟢 El canal inició directo. Arrancando bot...")
+                    start_bot(twitch, access_token, refresh_token)
+
+                elif event_type == "stream.offline":
+                    print("🟢->🔴 El canal terminó directo. Deteniendo bot...")
+                    stop_bot()
+
+            # elif msg_type == "session_keepalive":
+            #     print("💜 Keepalive recibido.")
+
+            elif msg_type == "session_reconnect":
+                new_url = data["payload"]["session"]["reconnect_url"]
+                print("♻️ Reconnect requerido. Reconectando a:", new_url)
+                await ws.close()
+                return await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token, url=new_url)
+
+
+# Listener principal
+async def eventsub_listener():
+    global access_token, refresh_token
+
+    twitch = await Twitch(CLIENT_ID, CLIENT_SECRET)
+
+    # 1. Obtener tokens
+    access_token, refresh_token = await asyncio.to_thread(get_tokens)
+
+    # 2. Verificar/renovar tokens
+    if not verify_tokens(access_token):
+        print("ERROR: Access token no válido, actualizando...")
+        access_token, refresh_token, expires_in = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token, False)
+        if not access_token and not refresh_token:
+            print("[TOKENS.py] No se encontraron tokens válidos. Abriendo navegador para autenticar...")
+            access_token, refresh_token = await authenticate_and_store(twitch)
+
+    # 3. Obtener broadcaster_id
+    broadcaster_id = await asyncio.to_thread(get_broadcaster_id, access_token)
+
+    # 4. Si ya está en vivo, arranca bot
+    if await asyncio.to_thread(is_channel_live, access_token):
+        print("🟢 El canal ya está en directo. Iniciando bot de inmediato...")
+        start_bot(twitch, access_token, refresh_token)
+
+    # 5. Arrancar task de refresco en segundo plano
+    asyncio.create_task(refresh_tokens_periodically())
+    
+    # 6. Conectar a EventSub
+    await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token)
+
+
+# ------------------------
+# Manejo de Tokens
+# ------------------------
+async def refresh_tokens_periodically():
+    global access_token, refresh_token
+
+    # Inicializamos la duración restante del token
+    token_expires_at = time.time() + 3600  # valor inicial arbitrario, se actualizará al refrescar
+
+    while True:
+        now = time.time()
+        sleep_time = max(token_expires_at - now - TOKEN_REFRESH_MARGIN, 60)
+        await asyncio.sleep(sleep_time)
+
+        try:
+            # refresca el token y obtiene expires_in
+            new_access, new_refresh, expires_in = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token)
+
+            if new_access and new_refresh:
+                access_token = new_access
+                refresh_token = new_refresh
+                # saveTokensToJSONBIN(access_token, refresh_token)
+                token_expires_at = time.time() + expires_in
+                print(f"✅ Tokens renovados. Próxima renovación en {int(expires_in - TOKEN_REFRESH_MARGIN)}s")
+            else:
+                print("❌ No se pudo renovar el token. Se requiere autenticación manual")
+        except Exception as e:
+            print("❌ Error al renovar tokens:", e)
+            # reintento en 1 minuto si falla
+            await asyncio.sleep(60)
+
+# ------------------------
+# Suscripciones
+# ------------------------
+def subscribe_eventsub(session_id, broadcaster_id, access_token):
+    for ev_type in ["stream.online", "stream.offline"]:
+        sub_payload = {
+            "type": ev_type,
+            "version": "1",
+            "condition": {"broadcaster_user_id": broadcaster_id},
+            "transport": {"method": "websocket", "session_id": session_id}
+        }
+        headers = {
+            "Client-ID": CLIENT_ID,
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        resp = requests.post(
+            "https://api.twitch.tv/helix/eventsub/subscriptions",
+            headers=headers, json=sub_payload
+        )
+        print(f"✅ Suscripción {ev_type} creada:", resp.json())
+
+# ------------------------
+# Bot lifecycle
+# ------------------------
+def start_bot(twitch, access_token, refresh_token):
+    global bot_task
+    if bot_task is None or bot_task.done():
+        bot_task = asyncio.create_task(main(twitch, access_token, refresh_token))
+    else:
+        print("⚠️ Bot ya estaba corriendo, no se inicia de nuevo.")
+
+def stop_bot():
+    global bot_task
+    if bot_task and not bot_task.done():
+        bot_task.cancel()
+        bot_task = None
+        print("✅ Bot detenido.")

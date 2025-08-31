@@ -9,6 +9,7 @@ HEADERS = {
     'Content-Type': 'application/json'
 }
 
+# obtener los tokens de acceso y actualización guardados en JSONBinJSONBIN
 def get_tokens():
     response = requests.get(JSONBIN_URL + '/latest', headers=HEADERS)
     response.raise_for_status()
@@ -16,16 +17,18 @@ def get_tokens():
     tokens = data['record']
     return tokens.get('access_token', ''), tokens.get('refresh_token', '')
 
-def update_tokens(access_token, refresh_token):
+# actualizar los tokens en JSONBIN
+def saveTokensToJSONBIN(access_token, refresh_token):
     payload = {
         'access_token': access_token,
         'refresh_token': refresh_token
     }
     response = requests.put(JSONBIN_URL, headers=HEADERS, json=payload)
     response.raise_for_status()
-    print("✅ Tokens guardados en JSONBin.")
+    print("[TOKENS.py] Tokens guardados en JSONBin.")
 
-def refresh_access_token(client_id, client_secret, refresh_token):
+# renovar access token usando refresh token
+def refresh_access_token(client_id, client_secret, refresh_token, save_to_db=True):
     url = 'https://id.twitch.tv/oauth2/token'
     data = {
         'grant_type': 'refresh_token',
@@ -34,29 +37,52 @@ def refresh_access_token(client_id, client_secret, refresh_token):
         'client_secret': client_secret
     }
     response = requests.post(url, data=data)
-    response.raise_for_status()
-    tokens = response.json()
-    return tokens['access_token'], tokens['refresh_token']
+    if response.status_code == 200:
+        tokens = response.json()
+        new_access = tokens['access_token']
+        new_refresh = tokens['refresh_token']
+        expires_in = tokens['expires_in']
 
+        # Guardar los tokens actualizados
+        if save_to_db:
+            saveTokensToJSONBIN(new_access, new_refresh)
+            print("[TOKENS.py] 🔄 Tokens refrescados y guardados correctamente")
+
+        print("[TOKENS.py] 🔄 Tokens refrescados correctamente")
+        print(expires_in)
+        return new_access, new_refresh, expires_in
+    else:
+        print("[TOKENS.py] ❌ Error refrescando tokens:", response.json())
+        return None, None, None
+
+# generar nuevos tokens mediante autenticación de usuario
 async def authenticate_and_store(twitch: Twitch):
-    print("🔐 No se encontraron tokens válidos. Abriendo navegador para autenticar...")
     auth = UserAuthenticator(twitch, SCOPES)
     token, refresh_token = await auth.authenticate()
-    update_tokens(token, refresh_token)
+    saveTokensToJSONBIN(token, refresh_token)
     return token, refresh_token
 
-def get_app_access_token():
-    """Obtiene un app access token de Twitch."""
-    url = 'https://id.twitch.tv/oauth2/token'
-    data = {
-        'client_id': CLIENT_ID,
-        'client_secret': CLIENT_SECRET,
-        'grant_type': 'client_credentials'
-    }
-    response = requests.post(url, data=data)
-    response.raise_for_status()
-    return response.json()['access_token']
+# Verifica si los tokens son válidos
+def verify_tokens(access_token):
+    """Devuelve True si el access_token es válido, False si no"""
+    try:
+        resp = requests.get(
+            "https://id.twitch.tv/oauth2/validate",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+        if resp.status_code == 200:
+            print("[TOKENS.py] ✅ Access token válido")
+            return True
+        else:
+            print("[TOKENS.py] ⚠️ Access token inválido o caducado")
+            return False
+    except Exception as e:
+        print("[TOKENS.py] ❌ Error verificando access token:", e)
+        return False
 
+
+# utilidades
+# obtener broadcaster_id del canal
 def get_broadcaster_id(token):
     """Obtiene el broadcaster_id del canal."""
     url = 'https://api.twitch.tv/helix/users'
@@ -70,6 +96,7 @@ def get_broadcaster_id(token):
     data = response.json()
     return data['data'][0]['id']
 
+# verificar si canal está en vivo
 def is_channel_live(token):
     """Verifica si el canal está en vivo."""
     url = 'https://api.twitch.tv/helix/streams'

@@ -27,7 +27,7 @@ DATOS_CANAL = {
     "mafyta": "Estás en el canal de twitch de Mafy ",
     "trinilup": "Estás en el canal de twitch de Trini ",
     "lofigirl": " ",
-    "applications": " ",
+    "raincarrelax": " ",
 }
 
 PERSONALIDAD_ACTUAL = {canal: "feliz" for canal in DATOS_CANAL.keys()}
@@ -36,4 +36,3 @@ USER_ROLES = {
     'oro': ['mafyta', 'weaita7', 'trinilup', 'kevincamacena'],
     'plata': ['ezeio', 'uber', 'mafy'],
 }
-

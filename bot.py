@@ -2,23 +2,9 @@ import asyncio
 import irc.client
 from twitchAPI.twitch import Twitch
 from config import CLIENT_ID, CLIENT_SECRET, CHANNEL, SCOPES
-from tokens import get_tokens, update_tokens, refresh_access_token, authenticate_and_store
 from commands import handle_command
 
-async def main():
-    twitch = await Twitch(CLIENT_ID, CLIENT_SECRET)
-
-    access_token, refresh_token = get_tokens()
-
-    if not access_token.strip() or not refresh_token.strip():
-        access_token, refresh_token = await authenticate_and_store(twitch)
-
-    try:
-        access_token, refresh_token = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token)
-        update_tokens(access_token, refresh_token)
-    except Exception as e:
-        print("⚠️ Error al renovar token:", e)
-
+async def main(twitch, access_token, refresh_token):
     await twitch.set_user_authentication(access_token, SCOPES, refresh_token=refresh_token)
 
     users = []
@@ -41,7 +27,7 @@ async def main():
 
     def on_connect(connection, event):
         connection.join(f"#{CHANNEL}")
-        print(f"✅ Conectado a: #{CHANNEL}")
+        print(f"[BOT.py]✅ Conectado a: #{CHANNEL}")
         reactor.scheduler.execute_after(5, lambda: send_hello(connection))
 
     conn.add_global_handler("welcome", on_connect)
