@@ -1,10 +1,19 @@
 from config import EMOCIONES, DATOS_CANAL, SYSTEM_PROMPT, PERSONALIDAD_ACTUAL, CHANNEL, USER_ROLES
 from gemini import query_gemini
 import random
+import threading
 
 def cmd_ping(conn, chan, user, prompt):
     conn.privmsg(chan, f'{user}, pong!')
     print(f'@{user} pong!')
+
+def cmd_hervidor(conn, chan, user, prompt, delay_seconds: int = 300):
+    conn.privmsg(chan, 'Vale, le aviso en 5 minutos ☕︎☕︎☕︎')
+    def _send_remember():
+        conn.privmsg(chan, '@trinilup el hervidor!!😲☕︎☕︎☕︎')
+
+    timer = threading.Timer(delay_seconds, _send_remember)
+    timer.start()
 
 def cmd_personalidad(conn, chan, user, prompt):
     if not prompt.strip():
@@ -84,6 +93,7 @@ COMMANDS = {
     '!wperso': {'func': cmd_personalidad, 'roles': ['oro']},
     '!patas': {'func': cmd_patas, 'roles': ['bronce', 'plata', 'oro']},
     '!wcomando': {'func': cmd_crearcomando, 'roles': ['oro']},
+    '!hervidor': {'func': cmd_hervidor, 'roles': ['bronce', 'plata', 'oro']},
 }
 
 def get_user_role(nick: str) -> str:
