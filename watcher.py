@@ -26,68 +26,79 @@ refresh_token = None
 TOKEN_REFRESH_MARGIN = 300  # renovar 5 min antes de expirar
 
 # Manejo de conexión WS
-async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token):
-    async with websockets.connect("wss://eventsub.wss.twitch.tv/ws") as ws:
-        async for message in ws:
-            data = json.loads(message)
-            msg_type = data.get("metadata", {}).get("message_type")
+async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
+                           url="wss://eventsub.wss.twitch.tv/ws", keepalive_seconds=30):
+    ws_url = f"{url}?keepalive_timeout_seconds={keepalive_seconds}"
 
-            if msg_type == "session_welcome":
-                session_id = data["payload"]["session"]["id"]
-                subscribe_eventsub(session_id, broadcaster_id, access_token)
+    while True:
+        try:
+            async with websockets.connect(
+                ws_url,
+                ping_interval=20,
+                ping_timeout=20,
+                close_timeout=5,
+            ) as ws:
+                async for message in ws:
+                    data = json.loads(message)
+                    msg_type = data.get("metadata", {}).get("message_type")
 
-            elif msg_type == "notification":
-                event_type = data["payload"]["subscription"]["type"]
+                    if msg_type == "session_welcome":
+                        session_id = data["payload"]["session"]["id"]
+                        await asyncio.to_thread(subscribe_eventsub, session_id, broadcaster_id, access_token)
 
-                if event_type == "stream.online":
-                    print("🔴->🟢 El canal inició directo. Arrancando bot...")
-                    start_bot(twitch, access_token, refresh_token)
+                    elif msg_type == "notification":
+                        event_type = data["payload"]["subscription"]["type"]
+                        if event_type == "stream.online":
+                            asyncio.create_task(asyncio.to_thread(start_bot, twitch, access_token, refresh_token))
+                        elif event_type == "stream.offline":
+                            asyncio.create_task(asyncio.to_thread(stop_bot))
 
-                elif event_type == "stream.offline":
-                    print("🟢->🔴 El canal terminó directo. Deteniendo bot...")
-                    stop_bot()
+                    elif msg_type == "session_keepalive":
+                        pass
 
-            # elif msg_type == "session_keepalive":
-            #     print("💜 Keepalive recibido.")
+                    elif msg_type == "session_reconnect":
+                        new_url = data["payload"]["session"]["reconnect_url"]
+                        await asyncio.to_thread(requests.post, WEBHOOK,
+                                                json={"content": "[WS]♻️ Reconnect requerido. Reconectando"})
+                        ws_url = new_url
+                        break
 
-            elif msg_type == "session_reconnect":
-                new_url = data["payload"]["session"]["reconnect_url"]
-                print("♻️ Reconnect requerido. Reconectando a:", new_url)
-                requests.post(WEBHOOK, json={"content": "♻️ Reconnect requerido. Reconectando"})
-                await ws.close()
-                return await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token, url=new_url)
+            # tras reconnect
+            await asyncio.sleep(0.5)
+
+        except websockets.exceptions.ConnectionClosedError as e:
+            # 4002
+            print(f"WS cerrado ({getattr(e, 'code', None)}): {e}. Reintentando...")
+            await asyncio.sleep(2)
+            continue
+        except Exception as e:
+            print("Error WS, reintentando:", e)
+            await asyncio.sleep(5)
+            continue
 
 
 # Listener principal
 async def eventsub_listener():
     global access_token, refresh_token
-
     twitch = await Twitch(CLIENT_ID, CLIENT_SECRET)
-
-    # 1. Obtener tokens
     access_token, refresh_token = await asyncio.to_thread(get_tokens)
 
-    # 2. Verificar/renovar tokens
     if not verify_tokens(access_token):
         print("ERROR: Access token no válido, actualizando...")
-        access_token, refresh_token, expires_in = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token, False)
+        access_token, refresh_token, expires_in = await asyncio.to_thread(refresh_access_token, CLIENT_ID, CLIENT_SECRET, refresh_token, False)
         if not access_token and not refresh_token:
-            print("[TOKENS.py] No se encontraron tokens válidos. Abriendo navegador para autenticar...")
-            requests.post(WEBHOOK, json={"content": "⚠️ Abriendo navegador para autenticar... ⚠️"})
+            print("No se encontraron tokens válidos. Abriendo navegador para autenticar...")
+            await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "⚠️ Abriendo navegador para autenticar... ⚠️"})
             access_token, refresh_token = await authenticate_and_store(twitch)
 
-    # 3. Obtener broadcaster_id
     broadcaster_id = await asyncio.to_thread(get_broadcaster_id, access_token)
 
-    # 4. Si ya está en vivo, arranca bot
     if await asyncio.to_thread(is_channel_live, access_token):
         print("🟢 El canal ya está en directo. Iniciando bot de inmediato...")
         start_bot(twitch, access_token, refresh_token)
 
-    # 5. Arrancar task de refresco en segundo plano
     asyncio.create_task(refresh_tokens_periodically())
     
-    # 6. Conectar a EventSub
     await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token)
 
 
@@ -107,7 +118,7 @@ async def refresh_tokens_periodically():
 
         try:
             # refresca el token y obtiene expires_in
-            new_access, new_refresh, expires_in = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token)
+            new_access, new_refresh, expires_in = await asyncio.to_thread(refresh_access_token, CLIENT_ID, CLIENT_SECRET, refresh_token)
 
             if new_access and new_refresh:
                 access_token = new_access
@@ -117,10 +128,10 @@ async def refresh_tokens_periodically():
                 print(f"✅ Tokens renovados. Próxima renovación en {int(expires_in - TOKEN_REFRESH_MARGIN)}s")
             else:
                 print("❌ No se pudo renovar el token. Se requiere autenticación manual")
-                requests.post(WEBHOOK, json={"content": "⚠️ No se pudo renovar el token. Se requiere autenticación manual ⚠️"})
+                await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "⚠️ No se pudo renovar el token. Se requiere autenticación manual ⚠️"})
         except Exception as e:
             print("❌ Error al renovar tokens:", e)
-            requests.post(WEBHOOK, json={"content": "❌ Error al renovar tokens ❌"})
+            await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "❌ Error al renovar tokens ❌"})
             # reintento en 1 minuto si falla
             await asyncio.sleep(60)
 

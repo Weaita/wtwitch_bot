@@ -10,7 +10,7 @@ def cmd_ping(conn, chan, user, prompt):
 def cmd_hervidor(conn, chan, user, prompt, delay_seconds: int = 300):
     conn.privmsg(chan, 'Vale, le aviso en 5 minutos ☕︎☕︎☕︎')
     def _send_remember():
-        conn.privmsg(chan, '@trinilup el hervidor!!😲☕︎☕︎☕︎')
+        conn.privmsg(chan, f'@{CHANNEL} el hervidor!!😲☕︎☕︎☕︎')
 
     timer = threading.Timer(delay_seconds, _send_remember)
     timer.start()

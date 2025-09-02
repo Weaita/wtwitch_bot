@@ -46,10 +46,9 @@ def refresh_access_token(client_id, client_secret, refresh_token, save_to_db=Tru
         # Guardar los tokens actualizados
         if save_to_db:
             saveTokensToJSONBIN(new_access, new_refresh)
-            print("[TOKENS.py] 🔄 Tokens refrescados y guardados correctamente")
+            print("[TOKENS.py] ☁️ Tokens guardados en dB")
 
         print("[TOKENS.py] 🔄 Tokens refrescados correctamente")
-        print(expires_in)
         return new_access, new_refresh, expires_in
     else:
         print("[TOKENS.py] ❌ Error refrescando tokens:", response.json())
