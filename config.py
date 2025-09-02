@@ -9,6 +9,8 @@ JSONBIN_ID = os.getenv("JSONBIN_ID")
 JSONBIN_API_KEY = os.getenv("JSONBIN_API_KEY")
 SCOPES = [AuthScope.CHAT_READ, AuthScope.CHAT_EDIT]
 
+WEBHOOK = os.getenv("WEBHOOK_URL")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 

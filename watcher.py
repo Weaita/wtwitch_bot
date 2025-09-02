@@ -1,6 +1,7 @@
 # Se encarga de determinar cuándo iniciar el bot, ya sea si el canal ya está en vivo al iniciar el script o cuando
 # recibe la notificación de que el canal ha iniciado directo mediante EventSub WebSocket.
 
+import multiprocessing
 import time
 import asyncio
 import json
@@ -17,7 +18,7 @@ from tokens import (
     refresh_access_token,
     authenticate_and_store
 )
-from config import CLIENT_ID, CHANNEL, CLIENT_SECRET
+from config import CLIENT_ID, CHANNEL, CLIENT_SECRET, WEBHOOK
 
 bot_task = None  # referencia global a la tarea del bot
 access_token = None
@@ -52,6 +53,7 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token):
             elif msg_type == "session_reconnect":
                 new_url = data["payload"]["session"]["reconnect_url"]
                 print("♻️ Reconnect requerido. Reconectando a:", new_url)
+                requests.post(WEBHOOK, json={"content": "♻️ Reconnect requerido. Reconectando"})
                 await ws.close()
                 return await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token, url=new_url)
 
@@ -71,6 +73,7 @@ async def eventsub_listener():
         access_token, refresh_token, expires_in = refresh_access_token(CLIENT_ID, CLIENT_SECRET, refresh_token, False)
         if not access_token and not refresh_token:
             print("[TOKENS.py] No se encontraron tokens válidos. Abriendo navegador para autenticar...")
+            requests.post(WEBHOOK, json={"content": "⚠️ Abriendo navegador para autenticar... ⚠️"})
             access_token, refresh_token = await authenticate_and_store(twitch)
 
     # 3. Obtener broadcaster_id
@@ -114,8 +117,10 @@ async def refresh_tokens_periodically():
                 print(f"✅ Tokens renovados. Próxima renovación en {int(expires_in - TOKEN_REFRESH_MARGIN)}s")
             else:
                 print("❌ No se pudo renovar el token. Se requiere autenticación manual")
+                requests.post(WEBHOOK, json={"content": "⚠️ No se pudo renovar el token. Se requiere autenticación manual ⚠️"})
         except Exception as e:
             print("❌ Error al renovar tokens:", e)
+            requests.post(WEBHOOK, json={"content": "❌ Error al renovar tokens ❌"})
             # reintento en 1 minuto si falla
             await asyncio.sleep(60)
 
@@ -144,16 +149,41 @@ def subscribe_eventsub(session_id, broadcaster_id, access_token):
 # ------------------------
 # Bot lifecycle
 # ------------------------
-def start_bot(twitch, access_token, refresh_token):
-    global bot_task
-    if bot_task is None or bot_task.done():
-        bot_task = asyncio.create_task(main(twitch, access_token, refresh_token))
+bot_process = None
+
+def run_bot(access_token, refresh_token):
+    """Función que se ejecuta dentro del proceso hijo"""
+    import asyncio
+    from twitchAPI.twitch import Twitch
+    from config import CLIENT_ID, CLIENT_SECRET
+    from bot import main
+
+    twitch = Twitch(CLIENT_ID, CLIENT_SECRET)
+    if asyncio.iscoroutinefunction(main):
+        asyncio.run(main(twitch, access_token, refresh_token))
     else:
-        print("⚠️ Bot ya estaba corriendo, no se inicia de nuevo.")
+        main(twitch, access_token, refresh_token)
+# -----------------------------------------------------------
+
+def start_bot(twitch, access_token, refresh_token):
+    global bot_process
+    if bot_process and bot_process.is_alive():
+        print("⚠️ Bot ya corriendo")
+        return
+
+    bot_process = multiprocessing.Process(
+        target=run_bot, args=(access_token, refresh_token), daemon=True
+    )
+    bot_process.start()
+    print(f"✅ Bot arrancado en proceso (PID={bot_process.pid})")
 
 def stop_bot():
-    global bot_task
-    if bot_task and not bot_task.done():
-        bot_task.cancel()
-        bot_task = None
-        print("✅ Bot detenido.")
+    global bot_process
+    if bot_process and bot_process.is_alive():
+        print("🛑 Deteniendo bot...")
+        bot_process.terminate()
+        bot_process.join()
+        bot_process = None
+        print("✅ Bot detenido")
+    else:
+        print("⚠️ No había bot corriendo para detener.")

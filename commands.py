@@ -53,10 +53,32 @@ def cmd_crearcomando(conn, chan, user, prompt):
 def cmd_presentacion(conn, chan, user, prompt):
     conn.privmsg(chan, 'Hoola, soy Alphonse BOT, estoy a su servicio <3')
 
+SALUDOS_PERSONALIZADOS = {
+    "mafyta": "¡Hola mi querida Mafyta! <3. ¿Cómo has estado?",
+    "sadistic_boar": "Sadiii 🥰, qué gusto tenerte en el chat 💖. ¿Cómo has estado?",
+    "kevincamacena": "Keev 🥰, qué gusto tenerte en el chat fiera, máquina, mastodonte 💖",
+}
+
+# Set para guardar quiénes ya fueron saludados
+USUARIOS_SALUDADOS = set()
+
+def saludar_usuario(conn, chan, user):
+    user_lower = user.lower()
+    if user_lower not in USUARIOS_SALUDADOS:
+        if user_lower in SALUDOS_PERSONALIZADOS:
+            saludo = SALUDOS_PERSONALIZADOS[user_lower]
+            conn.privmsg(chan, f"@{user} {saludo}")
+        else:
+            USUARIOS_SALUDADOS.add(user_lower)
+
+        # Guardamos que ya fue saludado
+        USUARIOS_SALUDADOS.add(user_lower)
+
+
 frases_patas = [
     "Me tapo los ojitos 🫣.",
-    "¡Ay! 😳😳😳.",
-    "Link solo para guerreros de temple duro."
+    "Link solo para guerreros de temple duro.",
+    "Patas, las esposas de los patos wajajá. Ok me callo *v*"
 ]
 
 def cmd_patas(conn, chan, user, prompt):
@@ -106,6 +128,8 @@ def get_user_role(nick: str) -> str:
         return 'bronce'
 
 def handle_command(connection, channel, nick, message):
+    saludar_usuario(connection, channel, nick)
+
     parts = message.strip().split()
     if not parts:
         return
