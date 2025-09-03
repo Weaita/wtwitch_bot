@@ -44,7 +44,8 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
 
                     if msg_type == "session_welcome":
                         session_id = data["payload"]["session"]["id"]
-                        await asyncio.to_thread(subscribe_eventsub, session_id, broadcaster_id, access_token)
+                        await asyncio.to_thread(subscribe_eventsub, session_id, broadcaster_id)
+
 
                     elif msg_type == "notification":
                         event_type = data["payload"]["subscription"]["type"]
@@ -138,7 +139,8 @@ async def refresh_tokens_periodically():
 # ------------------------
 # Suscripciones
 # ------------------------
-def subscribe_eventsub(session_id, broadcaster_id, access_token):
+def subscribe_eventsub(session_id, broadcaster_id):
+    global access_token
     for ev_type in ["stream.online", "stream.offline"]:
         sub_payload = {
             "type": ev_type,
