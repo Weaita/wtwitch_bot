@@ -33,4 +33,4 @@ async def main(twitch, access_token, refresh_token):
     conn.add_global_handler("welcome", on_connect)
     conn.add_global_handler("pubmsg", on_message)
 
-    reactor.process_forever()
+    await asyncio.to_thread(reactor.process_forever)

@@ -28,7 +28,8 @@ TOKEN_REFRESH_MARGIN = 300  # renovar 5 min antes de expirar
 # Manejo de conexión WS
 async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
                            url="wss://eventsub.wss.twitch.tv/ws", keepalive_seconds=30):
-    ws_url = f"{url}?keepalive_timeout_seconds={keepalive_seconds}"
+    base_ws_url = f"{url}?keepalive_timeout_seconds={keepalive_seconds}"
+    ws_url = base_ws_url
 
     while True:
         try:
@@ -38,6 +39,11 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
                 ping_timeout=20,
                 close_timeout=5,
             ) as ws:
+                # Después de una conexión exitosa, reseteamos la URL a la base.
+                # Si recibimos un mensaje de reconexión, se actualizará de nuevo.
+                # Esto evita reintentar con una URL de reconexión ya usada si la conexión se cae.
+                ws_url = base_ws_url
+
                 async for message in ws:
                     data = json.loads(message)
                     msg_type = data.get("metadata", {}).get("message_type")
@@ -60,7 +66,7 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
                     elif msg_type == "session_reconnect":
                         new_url = data["payload"]["session"]["reconnect_url"]
                         await asyncio.to_thread(requests.post, WEBHOOK,
-                                                json={"content": "[WS]♻️ Reconnect requerido. Reconectando"})
+                                                json={"content": "[WS]♻️ Reconnect requerido. Intentando reconectar a la nueva URL."})
                         ws_url = new_url
                         break
 
@@ -68,12 +74,15 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
             await asyncio.sleep(0.5)
 
         except websockets.exceptions.ConnectionClosedError as e:
-            # 4002
+            # Error 4007: Reseteamos a la URL base para asegurar que el próximo intento sea una sesión nueva y válida
+            await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "⚠️ WS cerrado"})
             print(f"WS cerrado ({getattr(e, 'code', None)}): {e}. Reintentando...")
+            ws_url = base_ws_url
             await asyncio.sleep(2)
             continue
         except Exception as e:
             print("Error WS, reintentando:", e)
+            ws_url = base_ws_url
             await asyncio.sleep(5)
             continue
 
