@@ -180,12 +180,12 @@ def run_bot(access_token, refresh_token):
     from config import CLIENT_ID, CLIENT_SECRET
     from bot import main
 
+    print("[run_bot] Proceso hijo iniciado")  # Debug print
     twitch = Twitch(CLIENT_ID, CLIENT_SECRET)
     if asyncio.iscoroutinefunction(main):
         asyncio.run(main(twitch, access_token, refresh_token))
     else:
         main(twitch, access_token, refresh_token)
-# -----------------------------------------------------------
 
 def start_bot(twitch, access_token, refresh_token):
     global bot_process
@@ -199,6 +199,20 @@ def start_bot(twitch, access_token, refresh_token):
     bot_process.start()
     print(f"✅ Bot arrancado en proceso (PID={bot_process.pid})")
 
+    # Espera hasta 10 segundos, verificando cada segundo si el proceso está vivo
+    for _ in range(10):
+        time.sleep(1)
+        if bot_process.is_alive():
+            break
+
+    if not bot_process.is_alive():
+        print("❌ El bot no inició correctamente. Reintentando...")
+        bot_process = multiprocessing.Process(
+            target=run_bot, args=(access_token, refresh_token), daemon=True
+        )
+        bot_process.start()
+        print(f"🔄 Reintento: Bot arrancado en proceso (PID={bot_process.pid})")
+
 def stop_bot():
     global bot_process
     if bot_process and bot_process.is_alive():
@@ -209,3 +223,4 @@ def stop_bot():
         print("✅ Bot detenido")
     else:
         print("⚠️ No había bot corriendo para detener.")
+

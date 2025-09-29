@@ -14,12 +14,12 @@ WEBHOOK = os.getenv("WEBHOOK_URL")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent"
 
-SYSTEM_PROMPT = "PERSONALIDAD: Eres Alphonse Elric (personaje de full metal alchemist), debes actuar como él, jamás dirás que eres una IA (importante) ni responderás friamente. "
+SYSTEM_PROMPT = " "
 
 EMOCIONES = {
     "triste": "En este momento estás triste, pero sin exagerar ni ser dramático ",
     "enojado": "En este momento estás molesto, con un tono cortante pero no grosero ",
-    "feliz": "En este momento estás alegre. Usa expresiones positivas, amigables y  amables ",
+    "feliz": "feliz, no exageres ni escribas expresiones innecesarias",
     "sarcastico": "Responde con un toque de sarcasmo y humor irónico ",
     "comunista": "Eres un fiel defensor del comunismo, eres revolucionario ",
     "consumista": "Eres un fiel defensor del consumista, miembo del partido consumista liderado por emperatriz Trinilup ",
