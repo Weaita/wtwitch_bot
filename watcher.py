@@ -24,6 +24,7 @@ bot_task = None  # referencia global a la tarea del bot
 access_token = None
 refresh_token = None
 TOKEN_REFRESH_MARGIN = 300  # renovar 5 min antes de expirar
+STREAM_CHECK_INTERVAL = 300  # 5 minutos en segundos
 
 # Manejo de conexión WS
 async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
@@ -120,6 +121,8 @@ async def eventsub_listener():
         start_bot(twitch, access_token, refresh_token)
 
     asyncio.create_task(refresh_tokens_periodically())
+    # Añadir esta línea para iniciar la verificación periódica
+    asyncio.create_task(check_stream_periodically(twitch, access_token, refresh_token))
     
     await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token)
 
@@ -246,4 +249,25 @@ def stop_bot():
         print("✅ Bot detenido")
     else:
         print("⚠️ No había bot corriendo para detener.")
+
+async def check_stream_periodically(twitch, access_token, refresh_token):
+    while True:
+        try:
+            is_live = await asyncio.to_thread(is_channel_live, access_token)
+            
+            status = "🟢 ONLINE" if is_live else "🔴 OFFLINE"
+            current_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{current_time}] Verificación periódica: {CHANNEL} está {status}")
+            
+            if is_live and (not bot_process or not bot_process.is_alive()):
+                print("🔍 Detección periódica: Stream activo pero bot inactivo")
+                await asyncio.to_thread(requests.post, WEBHOOK, 
+                    json={"content": "🔍 Stream detectado activo en verificación periódica. Iniciando bot..."})
+                await asyncio.to_thread(start_bot, twitch, access_token, refresh_token)
+            
+            await asyncio.sleep(STREAM_CHECK_INTERVAL)
+            
+        except Exception as e:
+            print(f"❌ Error en verificación periódica: {str(e)}")
+            await asyncio.sleep(60)  # Espera 1 minuto antes de reintentar si hay error
 
