@@ -33,55 +33,67 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
 
     while True:
         try:
+            print(f"[WebSocket] Attempting to connect to {ws_url}")
             async with websockets.connect(
                 ws_url,
                 ping_interval=20,
                 ping_timeout=20,
                 close_timeout=5,
             ) as ws:
-                # Después de una conexión exitosa, reseteamos la URL a la base.
-                # Si recibimos un mensaje de reconexión, se actualizará de nuevo.
-                # Esto evita reintentar con una URL de reconexión ya usada si la conexión se cae.
+                print("[WebSocket] Connection established")
                 ws_url = base_ws_url
 
                 async for message in ws:
                     data = json.loads(message)
                     msg_type = data.get("metadata", {}).get("message_type")
-
+                    
+                    # Detailed logging for each message type
+                    print(f"[WebSocket] Message Type: {msg_type}")
+                    
                     if msg_type == "session_welcome":
                         session_id = data["payload"]["session"]["id"]
+                        print(f"[WebSocket] Welcome received. Session ID: {session_id}")
                         await asyncio.to_thread(subscribe_eventsub, session_id, broadcaster_id)
-
 
                     elif msg_type == "notification":
                         event_type = data["payload"]["subscription"]["type"]
+                        print(f"[WebSocket] Notification received. Event type: {event_type}")
+                        print(f"[WebSocket] Full payload: {json.dumps(data['payload'], indent=2)}")
+                        
                         if event_type == "stream.online":
-                            asyncio.create_task(asyncio.to_thread(start_bot, twitch, access_token, refresh_token))
+                            print("[WebSocket] Stream online event detected. Starting bot...")
+                            await asyncio.to_thread(requests.post, WEBHOOK, 
+                                json={"content": "🟢 Stream online detected! Starting bot..."})
+                            await asyncio.to_thread(start_bot, twitch, access_token, refresh_token)
+                            
                         elif event_type == "stream.offline":
-                            asyncio.create_task(asyncio.to_thread(stop_bot))
+                            print("[WebSocket] Stream offline event detected. Stopping bot...")
+                            await asyncio.to_thread(requests.post, WEBHOOK,
+                                json={"content": "🔴 Stream offline detected! Stopping bot..."})
+                            await asyncio.to_thread(stop_bot)
 
                     elif msg_type == "session_keepalive":
-                        pass
+                        print("[WebSocket] Keepalive received")
 
                     elif msg_type == "session_reconnect":
                         new_url = data["payload"]["session"]["reconnect_url"]
+                        print(f"[WebSocket] Reconnect required. New URL: {new_url}")
                         await asyncio.to_thread(requests.post, WEBHOOK,
-                                                json={"content": "[WS]♻️ Reconnect requerido. Intentando reconectar a la nueva URL."})
+                            json={"content": "[WS]♻️ Reconnect requerido. Intentando reconectar..."})
                         ws_url = new_url
                         break
 
-            # tras reconnect
             await asyncio.sleep(0.5)
 
         except websockets.exceptions.ConnectionClosedError as e:
-            # Error 4007: Reseteamos a la URL base para asegurar que el próximo intento sea una sesión nueva y válida
-            await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "⚠️ WS cerrado"})
-            print(f"WS cerrado ({getattr(e, 'code', None)}): {e}. Reintentando...")
+            print(f"[WebSocket] Connection closed ({getattr(e, 'code', None)}): {e}")
+            await asyncio.to_thread(requests.post, WEBHOOK, 
+                json={"content": f"⚠️ WS cerrado (code: {getattr(e, 'code', None)})"})
             ws_url = base_ws_url
             await asyncio.sleep(2)
             continue
         except Exception as e:
-            print("Error WS, reintentando:", e)
+            print(f"[WebSocket] Error: {str(e)}")
             ws_url = base_ws_url
             await asyncio.sleep(5)
             continue
@@ -189,29 +201,40 @@ def run_bot(access_token, refresh_token):
 
 def start_bot(twitch, access_token, refresh_token):
     global bot_process
-    if bot_process and bot_process.is_alive():
-        print("⚠️ Bot ya corriendo")
-        return
+    try:
+        if bot_process and bot_process.is_alive():
+            print("⚠️ Bot ya corriendo (PID: {bot_process.pid})")
+            return
 
-    bot_process = multiprocessing.Process(
-        target=run_bot, args=(access_token, refresh_token), daemon=True
-    )
-    bot_process.start()
-    print(f"✅ Bot arrancado en proceso (PID={bot_process.pid})")
+        print("[Bot] Iniciando nuevo proceso del bot...")
+        bot_process = multiprocessing.Process(
+            target=run_bot, args=(access_token, refresh_token), daemon=True
+        )
+        bot_process.start()
+        print(f"✅ Bot arrancado en proceso (PID={bot_process.pid})")
 
-    # Espera hasta 10 segundos, verificando cada segundo si el proceso está vivo
-    for _ in range(10):
-        time.sleep(1)
-        if bot_process.is_alive():
-            break
+        # Espera hasta 10 segundos, verificando cada segundo si el proceso está vivo
+        for i in range(10):
+            time.sleep(1)
+            if bot_process.is_alive():
+                print(f"[Bot] Proceso confirmado vivo después de {i+1}s")
+                requests.post(WEBHOOK, json={"content": f"✅ Bot iniciado exitosamente (PID: {bot_process.pid})"})
+                return
+            print(f"[Bot] Esperando confirmación de proceso ({i+1}/10s)...")
 
-    if not bot_process.is_alive():
         print("❌ El bot no inició correctamente. Reintentando...")
+        requests.post(WEBHOOK, json={"content": "⚠️ Reintentando inicio del bot..."})
+        
         bot_process = multiprocessing.Process(
             target=run_bot, args=(access_token, refresh_token), daemon=True
         )
         bot_process.start()
         print(f"🔄 Reintento: Bot arrancado en proceso (PID={bot_process.pid})")
+        
+    except Exception as e:
+        error_msg = f"❌ Error al iniciar el bot: {str(e)}"
+        print(error_msg)
+        requests.post(WEBHOOK, json={"content": error_msg})
 
 def stop_bot():
     global bot_process
