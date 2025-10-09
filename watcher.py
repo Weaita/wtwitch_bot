@@ -65,6 +65,8 @@ async def connect_eventsub(broadcaster_id, twitch, access_token, refresh_token,
                             print("[WebSocket] Stream online event detected. Starting bot...")
                             await asyncio.to_thread(requests.post, WEBHOOK, 
                                 json={"content": "🟢 Stream online detected! Starting bot..."})
+                            # Verifica y renueva tokens antes de iniciar el bot
+                            access_token, refresh_token = await ensure_valid_tokens(twitch, access_token, refresh_token)
                             await asyncio.to_thread(start_bot, twitch, access_token, refresh_token)
                             
                         elif event_type == "stream.offline":
@@ -106,13 +108,7 @@ async def eventsub_listener():
     twitch = await Twitch(CLIENT_ID, CLIENT_SECRET)
     access_token, refresh_token = await asyncio.to_thread(get_tokens)
 
-    if not verify_tokens(access_token):
-        print("ERROR: Access token no válido, actualizando...")
-        access_token, refresh_token, expires_in = await asyncio.to_thread(refresh_access_token, CLIENT_ID, CLIENT_SECRET, refresh_token, False)
-        if not access_token and not refresh_token:
-            print("No se encontraron tokens válidos. Abriendo navegador para autenticar...")
-            await asyncio.to_thread(requests.post, WEBHOOK, json={"content": "⚠️ Abriendo navegador para autenticar... ⚠️"})
-            access_token, refresh_token = await authenticate_and_store(twitch)
+    access_token, refresh_token = await ensure_valid_tokens(twitch, access_token, refresh_token)
 
     broadcaster_id = await asyncio.to_thread(get_broadcaster_id, access_token)
 
@@ -126,6 +122,22 @@ async def eventsub_listener():
     
     await connect_eventsub(broadcaster_id, twitch, access_token, refresh_token)
 
+
+async def ensure_valid_tokens(twitch, access_token, refresh_token):
+    """Verifica y renueva tokens si es necesario antes de iniciar el bot."""
+    if not verify_tokens(access_token):
+        print("[ensure_valid_tokens] Token expirado, renovando antes de iniciar bot...")
+        new_access, new_refresh, expires_in = await asyncio.to_thread(
+            refresh_access_token, CLIENT_ID, CLIENT_SECRET, refresh_token, False
+        )
+        if new_access and new_refresh:
+            access_token = new_access
+            refresh_token = new_refresh
+            print("[ensure_valid_tokens] Token renovado exitosamente.")
+        else:
+            print("[ensure_valid_tokens] No se pudo renovar el token, autenticando manualmente...")
+            access_token, refresh_token = await authenticate_and_store(twitch)
+    return access_token, refresh_token
 
 # ------------------------
 # Manejo de Tokens
@@ -263,11 +275,34 @@ async def check_stream_periodically(twitch, access_token, refresh_token):
                 print("🔍 Detección periódica: Stream activo pero bot inactivo")
                 await asyncio.to_thread(requests.post, WEBHOOK, 
                     json={"content": "🔍 Stream detectado activo en verificación periódica. Iniciando bot..."})
+                # Verifica y renueva tokens antes de iniciar el bot
+                access_token, refresh_token = await ensure_valid_tokens(twitch, access_token, refresh_token)
                 await asyncio.to_thread(start_bot, twitch, access_token, refresh_token)
             
             await asyncio.sleep(STREAM_CHECK_INTERVAL)
             
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                print("🔄 Token expirado, actualizando...")
+                access_token, refresh_token, expires_in = await asyncio.to_thread(
+                    refresh_access_token,
+                    CLIENT_ID,
+                    CLIENT_SECRET,
+                    refresh_token,
+                    False
+                )
+                
+                if access_token and refresh_token:
+                    await twitch.set_user_authentication(access_token, twitch.app.app_scopes, refresh_token=refresh_token)
+                    print(f"✅ Token actualizado exitosamente (expira en {expires_in}s)")
+                    continue
+                else:
+                    print("❌ No se pudo actualizar el token")
+            
+            print(f"❌ Error en verificación periódica: {str(e)}")
+            await asyncio.sleep(60)
+            
         except Exception as e:
             print(f"❌ Error en verificación periódica: {str(e)}")
-            await asyncio.sleep(60)  # Espera 1 minuto antes de reintentar si hay error
+            await asyncio.sleep(60)
 
