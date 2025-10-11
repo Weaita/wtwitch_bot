@@ -109,7 +109,7 @@ def cmd_describe(conn, chan, user, prompt):
 
 COMMANDS = {
     '!wping': {'func': cmd_ping, 'roles': ['bronce', 'plata', 'oro']},
-    '!woye': {'func': cmd_oye, 'roles': ['oro']},
+    '!woye': {'func': cmd_oye, 'roles': ['bronce', 'plata', 'oro']},
     '!wdescribe': {'func': cmd_describe, 'roles': ['oro']},
     '!wpresentate': {'func': cmd_presentacion, 'roles': ['oro']},
     '!wperso': {'func': cmd_personalidad, 'roles': ['oro']},
